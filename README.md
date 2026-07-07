@@ -1,6 +1,6 @@
 # pi-kit
 
-个人使用的 [pi](https://github.com/earendil-works/pi-coding-agent) 资源集合（skills / prompts / subagents），通过本地路径接入 pi。
+个人使用的 [pi](https://github.com/earendil-works/pi) 资源集合（skills / prompts / subagents），通过本地路径接入 pi。
 
 ## 内容
 
