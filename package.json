@@ -1,0 +1,15 @@
+{
+  "name": "pi-kit",
+  "version": "0.1.0",
+  "description": "个人自定义 pi skills / prompts / subagents，统一管理。",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "pi": {
+    "skills": ["./skills"],
+    "prompts": ["./prompts"],
+    "subagents": {
+      "agents": ["./agents"]
+    }
+  }
+}
