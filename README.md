@@ -1,14 +1,17 @@
 # pi-kit
 
-个人使用的 [pi](https://github.com/earendil-works/pi) 资源集合（skills / prompts / subagents），通过本地路径接入 pi。
+个人使用的 [pi](https://github.com/earendil-works/pi) 资源集合（extensions / skills / prompts / subagents），通过本地路径接入 pi。
 
 ## 内容
 
+- **extensions/**
+  - `apply_patch` — 支持相对路径和绝对路径的 Codex 风格补丁工具
 - **skills/**
   - `grill` — 动手前拷问方案，逼出隐性假设与未决决策
   - `buy-side-research-minutes` — 买方调研纪要生成
   - `pi-skill-creator` — 创建/修剪 pi skill 的元 skill
   - `council` — 多模型 council 审议协议
+  - `project-supervisor-builder` — 按项目搭建长任务无人值守监工，并通过 Pi-Web session 汇报关键事件
 - **prompts/**
   - `handoff` — 会话交接简报
   - `ui-review` — 只读 UI/UX review
