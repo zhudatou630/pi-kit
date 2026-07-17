@@ -2,7 +2,9 @@
 name: council-skeptic
 description: Council 审议成员（怀疑派）——优先寻找隐藏假设、逻辑漏洞和失败条件
 tools: read, grep, find, ls
-thinking: xhigh
+model: sub2api-grok/grok-4.5:high
+fallbackModels: deepseek/deepseek-v4-pro:max
+thinking: false
 systemPromptMode: replace
 inheritProjectContext: false
 inheritSkills: false

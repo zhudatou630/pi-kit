@@ -13,10 +13,16 @@
 POST /api/agent/new
 Content-Type: application/json
 
-{ "cwd": "/absolute/project/path", "type": "ensure_session" }
+{
+  "cwd": "/absolute/project/path",
+  "type": "ensure_session",
+  "provider": "<provider>",
+  "modelId": "<model-id>",
+  "thinkingLevel": "<off|low|medium|high>"
+}
 ```
 
-响应返回 `sessionId`。再设置名称：
+`provider` / `modelId` / `thinkingLevel` 从 `.pi/watch/<task>.json` 读，在第3步「确认」时由用户选定。复用已有 session 时不传这三个字段（session 创建时已固定）。响应返回 `sessionId`。再设置名称：
 
 ```http
 POST /api/agent/<sessionId>

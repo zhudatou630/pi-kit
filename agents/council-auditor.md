@@ -2,7 +2,8 @@
 name: council-auditor
 description: Council 审议成员（风险审计）——重点分析安全、可靠性、运维和长期维护风险
 tools: read, grep, find, ls
-thinking: xhigh
+model: zai-coding-cn/glm-5.2:max
+thinking: false
 systemPromptMode: replace
 inheritProjectContext: false
 inheritSkills: false

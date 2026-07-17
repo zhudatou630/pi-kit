@@ -2,7 +2,8 @@
 name: council-solver
 description: Council 审议成员（主答）——提出清晰、可执行的方案，兼顾成本与收益
 tools: read, grep, find, ls
-thinking: xhigh
+model: sub2api/gpt-5.6-sol:xhigh
+thinking: false
 systemPromptMode: replace
 inheritProjectContext: false
 inheritSkills: false

@@ -35,18 +35,12 @@ description: |
 
 ## 编排协议（panel 模式）
 
-### 第 0 步：确认问题与成员模型
+### 第 0 步：确认问题与成员配置
 
 1. 把用户问题凝练成一句清晰的审议问题。
-2. 用 `bash` 执行 `pi --list-models` 拿到可用模型池（输出为 `provider model` 两列，调用时拼成 `provider/model`）。
-3. 为三个成员分配模型，按以下优先级：
-   - **若用户在问题里指定了模型名**（如"用 gpt-5.5、gemini、glm 讨论"）：按用户意图分配，用 `pi --list-models` 把名字解析为完整 `provider/model` 格式。
-   - **否则自动选**，目标是最多模型多样性：
-     - 优先挑 **3 个不同 provider**。
-     - 每个 provider 内优先选**旗舰模型**而非轻量变体：避开带 `mini`/`flash`/`turbo`/`air` 等后缀的（它们更快但推理更弱）；若某 provider 只有这类，就用它。
-   - **去重同一模型**：若多个 provider 的 model id 相同（例如 `openai-codex/gpt-5.5` 和 `sub2api/gpt-5.5` 实际是同一个模型，只是原厂 vs 中转），**视为同一模型，只取一个**——优先取原厂 provider（如 `openai-codex`）而非中转/代理 provider（如 `sub2api`）。这避免用"两个不同 provider"假象掩盖实际上是同一模型。
-   - **不足 3 个不同模型**：用现有模型尽量分散（不同 model id 即可），并在最终结论里标注"模型多样性不足"。
-4. 每个 `subagent` 调用显式传 `model: "provider/model"`。不传会继承当前会话模型，导致三个成员用同一模型——必须显式传。
+2. 用 `subagent({ action: "list" })` 确认三个成员可用；需要核对模型时，用 `subagent({ action: "get", agent: "<成员>" })`。成员 agent 的 frontmatter 是默认模型、effort 与 fallback 的唯一权威来源。
+3. 用 `pi --list-models` 确认成员配置引用的模型当前可用。主模型不可用但配置了 fallback 时允许继续；没有可用主模型或 fallback 时，停止该成员并向用户说明。
+4. 正常 council 不在 task 中传 `model`，让第一轮和 `resume` 都读取同一份成员配置。用户明确指定临时模型时，用 `pi --list-models` 解析成带 effort 的完整 `provider/model:effort`，第一轮显式覆盖；第二轮按下文的 fresh continuation 延续同一实际模型，避免 `resume` 回到成员默认模型。
 
 ### 第 1 步：并行独立回答
 
@@ -55,23 +49,33 @@ description: |
 ```typescript
 subagent({
   tasks: [
-    { agent: "council-solver", task: "【审议问题】<问题>。\n\n请独立给出你的方案。用 read/grep/find/ls 查看相关代码或文件取证。严格按你的输出格式返回。", model: "<模型A>", context: "fresh" },
-    { agent: "council-skeptic", task: "【审议问题】<问题>。\n\n请独立给出你的批判性分析。用 read/grep/find/ls 查看相关代码或文件取证。严格按你的输出格式返回。", model: "<模型B>", context: "fresh" },
-    { agent: "council-auditor", task: "【审议问题】<问题>。\n\n请独立给出你的风险评估。用 read/grep/find/ls 查看相关代码或文件取证。严格按你的输出格式返回。", model: "<模型C>", context: "fresh" }
+    { agent: "council-solver", task: "【审议问题】<问题>。\n\n请独立给出你的方案。用 read/grep/find/ls 查看相关代码或文件取证。严格按你的输出格式返回。" },
+    { agent: "council-skeptic", task: "【审议问题】<问题>。\n\n请独立给出你的批判性分析。用 read/grep/find/ls 查看相关代码或文件取证。严格按你的输出格式返回。" },
+    { agent: "council-auditor", task: "【审议问题】<问题>。\n\n请独立给出你的风险评估。用 read/grep/find/ls 查看相关代码或文件取证。严格按你的输出格式返回。" }
   ],
+  context: "fresh",
   concurrency: 3
 })
 ```
 
-收集三个结果（每个是结构化 markdown：立场/主要主张/证据/风险/置信度），并记录这次 parallel run 的 `run id` 与成员 index：`0 = council-solver`，`1 = council-skeptic`，`2 = council-auditor`。第二轮要用这些 index 续接同一批成员会话。
+收集三个结果（每个是结构化 markdown：立场/主要主张/证据/风险/置信度），并记录：
 
-### 第 2 步：续接成员会话并互相批评
+- parallel run 的 `run id` 与成员 index：`0 = council-solver`，`1 = council-skeptic`，`2 = council-auditor`；
+- 每个成员的实际最终 `model` 和 `attemptedModels`。若工具结果未直接显示，用 `status` 或 run artifact 核对；
+- 成员是由配置主模型完成、触发 fallback，还是使用了用户的临时模型覆盖。
 
-第二轮不要重新启动 fresh subagent。用 `subagent({ action: "resume" })` 续接第一轮的三个 child session，让同一个逻辑成员基于自己第一轮完整会话继续发言。`resume` 会从已持久化的子会话恢复上下文；它不是保留同一个 OS 进程，但语义上是同一成员继续回答。
+### 第 2 步：按模型连续性选择批评轮路径
 
-每个成员已经能看到自己的第一轮完整上下文，因此第二轮 message 只需要注入另外两个成员的第一轮输出。默认注入其他成员的完整输出；只有第一轮输出过长、会明显挤爆上下文时，才允许结构化压缩。压缩必须保留每个成员的「立场、关键论据、证据/引用、假设、适用条件、失败条件、置信度」，不能只保留结论摘要。
+对每个成员分别选择：
 
-依次启动三个 resume；每个 revive 会返回新的 run id，可随后用 `subagent({ action: "status", id: "<revived-run-id>" })` 等待结果：
+- **正常路径**：第一轮由该成员配置的主模型完成，且没有临时模型覆盖。用 `subagent({ action: "resume" })` 续接第一轮 child session；revive 会重新读取相同的 agent 模型配置，因此同时保持会话与模型连续性。
+- **Fresh continuation**：第一轮触发了 fallback、使用了用户临时模型覆盖，或 `resume` 失败。重新启动同一角色，显式传第一轮的实际最终 `model`，并注入原问题、它自己的第一轮完整输出及另外两名成员的第一轮输出。把自己的第一轮输出视为既有立场，先批判其他成员，再决定坚持、修订或让步。
+
+自动 fallback 只处理限流、认证、超时、模型不可用、空响应等 provider/model 故障；回答质量差不触发 fallback。
+
+正常路径中的成员已经能看到自己的第一轮完整上下文，因此第二轮 message 只需要注入另外两个成员的第一轮输出。默认注入完整输出；只有第一轮输出过长、会明显挤爆上下文时，才允许结构化压缩。压缩必须保留每个成员的「立场、关键论据、证据/引用、假设、适用条件、失败条件、置信度」，不能只保留结论摘要。
+
+对走正常路径的成员分别启动 resume；每个 revive 会返回新的 run id，可随后用 `subagent({ action: "status", id: "<revived-run-id>" })` 等待结果。以下展示三名成员都走正常路径时的调用：
 
 ```typescript
 subagent({
@@ -96,6 +100,17 @@ subagent({
 })
 ```
 
+Fresh continuation 使用独立调用，不复用第一轮 run id：
+
+```typescript
+subagent({
+  agent: "<触发 fallback、临时覆盖或 resume 失败的成员>",
+  model: "<该成员第一轮实际最终 provider/model:effort>",
+  context: "fresh",
+  task: "【审议问题】<问题>。\n\n你正在延续同一逻辑成员的审议。以下是你自己的第一轮正式输出，请把它视为你的既有立场：\n\n--- 你自己的第一轮 ---\n<自己的第一轮完整输出>\n\n--- 其他成员第一轮 ---\n<另外两名成员的第一轮完整输出或结构化压缩>\n\n请基于完整论证链，先指出其他成员最弱的论点、隐藏假设、证据缺口或适用条件错误；再决定是否坚持、修订或让步于你的第一轮立场。严格按批评轮输出格式返回。"
+})
+```
+
 批评轮必须输出：对其他成员最弱论点的批评、自己第一轮立场的坚持/修订/让步、修订后的结论或方案、剩余分歧、置信度。
 
 ### 第 3 步：主 agent 自己综合
@@ -113,15 +128,15 @@ subagent({
 ## 关键约束
 
 1. **编排权在你**：你决定要不要跳过批评轮（简单问题可只做独立回答后直接综合）、要不要追加追问。但默认跑满独立+批评两轮。
-2. **成员连续性**：默认第二轮用 `resume` 续接第一轮 child session。不要重新启动 fresh 成员，除非 resume 失败；若降级为 fresh，最终结论里必须说明。
-3. **反迎合**：批评轮的 message 里必须要求"先批判后修订"，并要求成员明确说明对自己第一轮立场是坚持、修订还是让步。
-4. **模型多样性**：按第 0 步的策略给三个成员不同模型（不同 provider 且 model id 去重）。不传 `model` 会继承会话模型导致三员同型，必须显式传。多样性不足时在最终结论标注。
+2. **模型配置来源**：成员 agent frontmatter 是默认模型、effort 与 fallback 的唯一权威来源。正常调用不传 `model`；临时覆盖必须在第二轮显式延续第一轮实际最终模型。
+3. **成员连续性**：主模型正常完成时用 `resume`；fallback、临时覆盖或 resume 失败时用 fresh continuation。任何 fresh continuation 都要在最终结论中说明原因、实际模型和未保留隐藏会话上下文。
+4. **反迎合**：批评轮的 message 里必须要求"先批判后修订"，并要求成员明确说明对自己第一轮立场是坚持、修订还是让步。
 5. **上下文完整性与 token 控制**：第二轮默认给每个成员注入另外两个成员的第一轮完整输出。只有上下文明显过长时才结构化压缩，且不能只保留结论摘要。
-6. **过程可见**：每一步 subagent 调用都是独立的 tool call，用户能看到第一轮 parallel run、第二轮三个 resume/status、以及各成员输出。不要把所有事塞进一次黑盒工具。
+6. **过程可见**：每一步 subagent 调用都是独立的 tool call，用户能看到第一轮 parallel run、第二轮三个 continuation/status、以及各成员输出。不要把所有事塞进一次黑盒工具。
 7. **不要让成员自己综合**：综合是你的职责，你有全局上下文。
 
 ## 简化情形
 
 - 问题很简单：可只跑第 1 步（独立回答），跳过批评，直接综合。
 - 只需 2 个视角：可只用 solver + skeptic。
-- 用户指定模型：按指定分配（自然语言提到的模型名，用 `pi --list-models` 解析为完整格式）。
+- 用户指定临时模型：第一轮显式覆盖；第二轮使用相同实际模型做 fresh continuation，并披露未保留隐藏会话上下文。

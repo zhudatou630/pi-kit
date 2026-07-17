@@ -8,7 +8,6 @@
   - `apply_patch` — 支持相对路径和绝对路径的 Codex 风格补丁工具
 - **skills/**
   - `grill` — 动手前拷问方案，逼出隐性假设与未决决策
-  - `buy-side-research-minutes` — 买方调研纪要生成
   - `pi-skill-creator` — 创建/修剪 pi skill 的元 skill
   - `council` — 多模型 council 审议协议
   - `watchman` — 用固定脚本 pi-watch + OS 定时器为长任务搭建无人值守监工
