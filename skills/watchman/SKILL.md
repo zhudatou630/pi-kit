@@ -1,4 +1,5 @@
 ---
+disable-model-invocation: true
 name: watchman
 description: 为当前项目的长任务（远端训练、回测、抓取、编译等）搭建无人值守监工。用固定脚本 pi-watch + OS 定时器，正常时静默不调模型，异常时唤醒 Pi-Web session 让 Agent 诊断和处理。不用于一次性查日志、短命令等待或搭通用监控平台。
 ---

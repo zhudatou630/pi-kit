@@ -4,3 +4,5 @@ node_modules/
 .pi/
 archive/
 /AGENTS.md
+.pi-subagents/
+package-lock.json
