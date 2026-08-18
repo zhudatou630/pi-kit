@@ -14,8 +14,10 @@
 - **prompts/**
   - `handoff` — 会话交接简报
   - `ui-review` — 只读 UI/UX review
-- **agents/** — council 的三个 subagent（skeptic / auditor / solver）
+- **agents/** — council 的三个子代理（skeptic / auditor / solver）。源文件在本目录；tintinweb 不读包里的 `pi.subagents`，需 symlink 到 `~/.pi/agent/agents/` 才能全局发现。
 
 ## 接入
 
-在 pi 的 agent `settings.json` 的 `packages` 里加入本仓库的本地克隆路径即可，编辑即时生效，无需 `pi update`。换机时 `git clone` 后同样配置即可。
+skill / prompt / extension：在 pi 的 `settings.json` 的 `packages` 里加入本仓库的本地克隆路径即可。
+
+自定义 agent：把 `agents/*.md` symlink 到 `~/.pi/agent/agents/`（tintinweb 只扫这个全局目录和项目 `.pi/agents/`）。换机时 `git clone` 后同样配置包路径，并重建 symlink。
