@@ -13,7 +13,7 @@ description: 操作本机常驻假桌面里的专用 Chrome（需登录网页、
 
 `tab` `open` `snapshot` `snapshot -i` `click` `fill` `type` `press` `scroll` `scrollintoview` `wait` `get url` `get title` `get text` `download` `screenshot` `back` `reload` `tab new` `tab close`
 
-不会用的命令再跑 `agent-browser skills get core`。
+不会用的命令再跑 `ab skills get core`。
 
 ## 操作原则
 

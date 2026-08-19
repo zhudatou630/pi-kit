@@ -23,9 +23,6 @@ description: 动手执行一个非平凡方案前，先把它拷问清楚——�
 - Should not trigger: 单步简单任务；用户已明说直接执行；纯事实查询；一次性结构化写作。
 - Inputs: 粗略方案/想法/计划。
 - Outputs: 对话中共识 + 在 `.pi/grill/` 下生成的决策记录文件（`YYYY-MM-DD-HHMM——<主题>.md`）。
-- Validation: `python scripts/validate_pi_skill.py <skill>`；真实场景对比有无 skill 的可靠性。
-- Risk level: personal
-- Scope: 建议全局安装（跨项目复用）。
 
 ## 如何拷问
 

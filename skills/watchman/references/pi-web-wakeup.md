@@ -18,7 +18,7 @@ Content-Type: application/json
   "type": "ensure_session",
   "provider": "<provider>",
   "modelId": "<model-id>",
-  "thinkingLevel": "<off|low|medium|high>"
+  "thinkingLevel": "<off|minimal|low|medium|high|xhigh|max>"
 }
 ```
 

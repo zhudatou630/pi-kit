@@ -10,7 +10,7 @@ description: 为当前项目的长任务（远端训练、回测、抓取、编�
 
 ## Should trigger
 
-- 建立远端长任务监工。
+- 建立长任务监工：远端训练/回测/抓取，或本地编译、本地回测等也要离开浏览器监督的任务。
 - 修改或停用已有 `.pi/watch/` 监工。
 
 ## Should not trigger
@@ -22,7 +22,7 @@ description: 为当前项目的长任务（远端训练、回测、抓取、编�
 
 ## pi-watch
 
-`scripts/pi-watch` 是固定脚本，安装一次，所有项目复用。它只做三件事：
+`scripts/pi-watch` 在本 skill 目录下（仓库里是 `skills/watchman/scripts/pi-watch`）。相对路径从本 skill 目录解析，不要假设 `pi-watch` 已在 PATH。安装 timer 时脚本会把自身绝对路径写进 systemd unit，之后所有项目复用同一份脚本。它只做三件事：
 
 1. 执行检查命令。
 2. 退出码 0 → 清除异常指纹，静默退出。
@@ -73,7 +73,7 @@ ssh gpu-1 'python /srv/quant/healthcheck.py train-001 --json'
   "timeout": 120,
   "provider": "<provider>",
   "modelId": "<model-id>",
-  "thinkingLevel": "<off|low|medium|high>"
+  "thinkingLevel": "<off|minimal|low|medium|high|xhigh|max>"
 }
 ```
 
@@ -114,7 +114,7 @@ md 模板（用占位符，按项目实际填写；不要写死某个项目的�
 
 ### 6. 安装 timer
 
-运行 `pi-watch install <config> <interval>`（如 `pi-watch install .pi/watch/train-001.json 10m`）。脚本自动生成 systemd user service + timer 并启用。卸载用 `pi-watch uninstall <config>`。需要 `loginctl enable-linger`（退出登录后 timer 继续运行）时说明影响并等确认。
+用本 skill 目录下的脚本运行 `scripts/pi-watch install <config> <interval>`（如 `scripts/pi-watch install .pi/watch/train-001.json 10m`）。脚本自动生成 systemd user service + timer 并启用。卸载用 `scripts/pi-watch uninstall <config>`。需要 `loginctl enable-linger`（退出登录后 timer 继续运行）时说明影响并等确认。
 
 ### 7. 验证
 
