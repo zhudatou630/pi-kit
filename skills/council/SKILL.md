@@ -45,6 +45,7 @@ description: |
 2. 正常 council 不在 `Agent` 调用里传 `model` / `thinking`，让 frontmatter 钉死的配置生效。
 3. 用户明确指定临时模型时，用 `pi --list-models` 解析成 `provider/modelId`，第一轮显式传入 `model`（thinking 仍走成员配置，除非用户也指定了）。第二轮不要 `resume`，改走 fresh continuation，并传入同一 `model`，避免 resume 回到成员默认模型。
 4. 若 `Agent` 因未知类型失败，或结果落到 `general-purpose` / Explore / Plan：停止该成员，向用户说明，不要把通用代理的输出当成 council 意见。
+5. 预取证：成员只有只读工具（read/grep/find/ls），没有 bash 和网络。问题涉及根因分析或需要动态证据（git 历史、依赖版本、外部文档、复现结果）时，spawn 前先自己取证，把关键输出注入成员 prompt；成员只做静态核证。
 
 ### 第 1 步：并行独立回答
 
