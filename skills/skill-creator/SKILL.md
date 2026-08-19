@@ -1,9 +1,9 @@
 ---
-name: pi-skill-creator
+name: skill-creator
 description: Use when creating, updating, pruning, or evaluating lightweight pi Agent Skills from repeated workflow automation, tool routines, domain processes, or reusable development practices. Use to clarify the real workflow, choose skill vs AGENTS.md vs script vs prompt, define non-goals and trigger boundaries, write minimal SKILL.md files, validate locally, and decide draft/project/global placement. Do not use for one-off answers, summaries, translations, or repo-wide rules better stored in AGENTS.md.
 ---
 
-# Pi Skill Creator
+# Skill Creator
 
 Create small, reliable pi skills without turning every workflow into a governance project.
 

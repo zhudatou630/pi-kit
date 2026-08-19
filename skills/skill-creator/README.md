@@ -1,4 +1,4 @@
-# pi-skill-creator
+# skill-creator
 
 A lightweight [pi](https://github.com/earendil-works/pi-coding-agent) Agent Skill for creating, improving, pruning, and validating small workflow-oriented skills.
 
@@ -6,7 +6,7 @@ This project is intentionally not a full skill governance platform. It is a prac
 
 ## What It Helps With
 
-Use `pi-skill-creator` when you want to:
+Use `skill-creator` when you want to:
 
 - turn a repeated workflow into a pi Agent Skill;
 - improve an existing skill based on user feedback;
@@ -40,7 +40,7 @@ The most important rule is: do not create or edit skill files until there is a `
 ## Package Contents
 
 ```text
-pi-skill-creator/
+skill-creator/
 ├── SKILL.md
 ├── references/
 │   └── method.md
@@ -56,27 +56,7 @@ pi-skill-creator/
 
 ## Install
 
-### User-level pi install
-
-```bash
-mkdir -p ~/.pi/agent/skills
-git clone https://github.com/zhudatou630/pi-skill-creator.git ~/.pi/agent/skills/pi-skill-creator
-```
-
-Restart pi or start a new pi session if your current session does not pick up new user-level skills immediately.
-
-### Shared local install
-
-For a machine-wide shared directory, clone it somewhere readable by the users who should use it, then add that directory to pi settings or copy/symlink it into a pi skill discovery path.
-
-Example:
-
-```bash
-sudo mkdir -p /opt/pi-shared/skills
-sudo git clone https://github.com/zhudatou630/pi-skill-creator.git /opt/pi-shared/skills/pi-skill-creator
-```
-
-Then configure pi to discover that shared skill directory if it is not already in your skill search path.
+This skill lives in pi-kit and is loaded with the rest of the package. Do not clone it as a standalone repo.
 
 ## Usage
 

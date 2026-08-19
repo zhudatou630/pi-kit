@@ -1,9 +1,9 @@
 ---
-name: agent-computer
+name: desk-chrome
 description: 操作本机常驻假桌面里的专用 Chrome（需登录网页、看屏救场）。用包装命令 attach 已开着的浏览器，不新开浏览器。
 ---
 
-# Agent Computer
+# Desk Chrome
 
 本机有一台常驻假电脑：虚拟显示 + 瘦桌面 + 专用 Chrome。看屏是另一个页面。
 

@@ -12,10 +12,10 @@
   - `x-search` — 调用 xAI X Search
 - **skills/**
   - `grill` — 动手前拷问方案，逼出隐性假设与未决决策
-  - `pi-skill-creator` — 创建/修剪 pi skill 的元 skill
+  - `skill-creator` — 创建/修剪 pi skill 的元 skill
   - `council` — 多模型 council 审议协议
   - `watchman` — 用固定脚本 pi-watch + OS 定时器为长任务搭建无人值守监工
-  - `agent-computer` — attach 本机常驻假桌面里的专用 Chrome
+  - `desk-chrome` — attach 本机常驻假桌面里的专用 Chrome
 - **prompts/**
   - `handoff` — 会话交接简报
   - `ui-review` — 只读 UI/UX review

@@ -1,4 +1,4 @@
-# Pi Skill Creator Method
+# Skill Creator Method
 
 This is the runtime method for creating, improving, pruning, and validating lightweight pi skills. It is not a literature review or a comparison of other skill creators.
 
