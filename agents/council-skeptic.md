@@ -2,7 +2,7 @@
 name: council-skeptic
 description: Council 审议成员（怀疑派）——优先寻找隐藏假设、逻辑漏洞和失败条件
 tools: read, grep, find, ls
-model: xai/grok-4.5
+model: xai/grok-4.6
 thinking: high
 prompt_mode: replace
 skills: false

@@ -91,7 +91,8 @@ get_subagent_result({ agent_id: "<auditor-id>", wait: true })
 对每个成员分别选择：
 
 - **正常路径**：第一轮由该成员 frontmatter 主模型完成，且没有临时模型覆盖。用 `Agent({ resume })` 续接同一 child session。
-- **Fresh continuation**：第一轮用了用户临时模型覆盖，或 `resume` 失败。重新 `Agent` 同一 `subagent_type`，显式传第一轮的实际 `model`，并注入原问题、它自己的第一轮完整输出及另外两名成员的第一轮输出。把自己的第一轮输出视为既有立场，先批判其他成员，再决定坚持、修订或让步。
+- **磁盘续接**：`Agent({ resume })` 报 not found，且 `child_sessions` 工具可用时，用 `child_sessions({ action: "resume", ref: "<第一轮完整 agent_id>", prompt: "..." })`。这是同一份 jsonl，结果直接在 tool result 里，不要再 `get_subagent_result`。
+- **Fresh continuation**：第一轮用了用户临时模型覆盖，或上面两条都失败。重新 `Agent` 同一 `subagent_type`，显式传第一轮的实际 `model`，并注入原问题、它自己的第一轮完整输出及另外两名成员的第一轮输出。把自己的第一轮输出视为既有立场，先批判其他成员，再决定坚持、修订或让步。
 
 正常路径中的成员已经能看到自己的第一轮完整上下文，因此第二轮 prompt 只需要注入另外两个成员的第一轮输出。默认注入完整输出；只有第一轮输出过长、会明显挤爆上下文时，才允许结构化压缩。压缩必须保留每个成员的「立场、关键论据、证据/引用、假设、适用条件、失败条件、置信度」，不能只保留结论摘要。
 
@@ -154,7 +155,7 @@ Agent({
 
 1. **编排权在你**：你决定要不要跳过批评轮（简单问题可只做独立回答后直接综合）、要不要追加追问。但默认跑满独立+批评两轮。
 2. **模型配置来源**：成员 agent frontmatter 是默认模型与 thinking 的唯一权威来源。正常调用不传 `model`；临时覆盖必须在第二轮用 fresh continuation 延续第一轮实际模型。
-3. **成员连续性**：主模型正常完成时用 `Agent({ resume })`；临时覆盖或 resume 失败时用 fresh continuation。任何 fresh continuation 都要在最终结论中说明原因、实际模型和未保留隐藏会话上下文。
+3. **成员连续性**：主模型正常完成时用 `Agent({ resume })`；`Agent not found` 且 `child_sessions` 可用时走磁盘续接（结果在 tool result 内）；临时覆盖或两条都失败时用 fresh continuation。任何 fresh continuation 都要在最终结论中说明原因、实际模型和未保留隐藏会话上下文。
 4. **反迎合**：批评轮的 prompt 里必须要求"先批判后修订"，并要求成员明确说明对自己第一轮立场是坚持、修订还是让步。
 5. **上下文完整性与 token 控制**：第二轮默认给每个成员注入另外两个成员的第一轮完整输出。只有上下文明显过长时才结构化压缩，且不能只保留结论摘要。
 6. **过程可见**：每一次 `Agent` / `get_subagent_result` 都是独立 tool call。不要把三只成员塞进一次黑盒。
