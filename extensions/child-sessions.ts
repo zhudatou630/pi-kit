@@ -257,7 +257,7 @@ export default function childSessions(pi: ExtensionAPI): void {
 				}),
 				ref: Type.Optional(
 					Type.String({
-						description: "For resume: first-round agent id, or session name like council-solver#cb4f267a",
+						description: "For resume: first-round agent id, or session name like explore#cb4f267a",
 					}),
 				),
 				prompt: Type.Optional(Type.String({ description: "For resume: the next user message" })),
