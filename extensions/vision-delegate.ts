@@ -1,14 +1,14 @@
 /**
  * Vision Delegate Extension
  *
- * 当主模型不支持图片（例如 glm-5.2）时，自动用 glm-5v-turbo 把图片
+ * 当主模型不支持图片（例如 glm-5.2）时，自动用 glm-5.3-flash 把图片
  * 转成文字描述，再把描述喂给主模型。这样无需手动切换模型就能"看图"。
  *
  * 工作流程：
  *   用户发图片 + 文字
  *     → input 事件拦截
  *     → 检测到当前模型不支持图片
- *     → 调用 glm-5v-turbo 识别每张图片，得到文字描述
+ *     → 调用 glm-5.3-flash 识别每张图片，得到文字描述
  *     → 把描述追加到用户文字后，清空 images
  *     → 主模型（glm-5.2）收到纯文字（含视觉描述），正常回答
  *
@@ -21,7 +21,7 @@ import { Type } from "typebox";
 import { readFile } from "node:fs/promises";
 import { resolve, isAbsolute, extname } from "node:path";
 
-const VISION_MODEL = "glm-5v-turbo";
+const VISION_MODEL = "glm-5.3-flash";
 const VISION_ENDPOINT =
   "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions";
 
@@ -35,7 +35,7 @@ const EXT_TO_MIME: Record<string, string> = {
 };
 
 /**
- * 调用 glm-5v-turbo 识别单张图片，返回文字描述。
+ * 调用视觉模型识别单张图片，返回文字描述。
  * data 为 base64 字符串，mimeType 如 image/png。
  */
 async function describeImage(
@@ -58,6 +58,9 @@ async function describeImage(
     body: JSON.stringify({
       model: VISION_MODEL,
       stream: false,
+      // 描述图片用不到深度推理，固定 low 档，避免默认 max 白烧 token
+      thinking: { type: "enabled" },
+      reasoning_effort: "low",
       messages: [
         {
           role: "user",
@@ -78,7 +81,7 @@ async function describeImage(
 
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
-    throw new Error(`glm-5v-turbo HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+    throw new Error(`${VISION_MODEL} HTTP ${resp.status}: ${errText.slice(0, 300)}`);
   }
 
   const json: any = await resp.json();
@@ -105,7 +108,7 @@ export default function (pi: ExtensionAPI) {
     const model = ctx.model;
     if (model && model.input.includes("image")) return { action: "continue" };
 
-    // 取 API key：委托目标是智谱 glm-5v-turbo，只用智谱凭据
+    // 取 API key：委托目标是智谱视觉模型，只用智谱凭据
     const candidates = ["zai-coding-cn", "zai"];
     let apiKey: string | undefined;
     for (const p of candidates) {
@@ -114,7 +117,7 @@ export default function (pi: ExtensionAPI) {
     }
     if (!apiKey) {
       ctx.ui.notify(
-        "未找到智谱 API key，无法用 glm-5v-turbo 识别图片。请先 /login 智谱。",
+        `未找到智谱 API key，无法用 ${VISION_MODEL} 识别图片。请先 /login 智谱。`,
         "error",
       );
       return { action: "continue" };
@@ -122,7 +125,7 @@ export default function (pi: ExtensionAPI) {
 
     ctx.ui.setStatus(
       "vision",
-      `用 glm-5v-turbo 识别 ${images.length} 张图片…`,
+      `用 ${VISION_MODEL} 识别 ${images.length} 张图片…`,
     );
     try {
       const parts: string[] = [];
@@ -183,7 +186,7 @@ export default function (pi: ExtensionAPI) {
       ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      // 当前模型本身支持图片：让它直接用 read 看，不要委托给 glm-5v-turbo
+      // 当前模型本身支持图片：让它直接用 read 看，不要委托给视觉模型
       const model = ctx.model;
       if (model && model.input.includes("image")) {
         return {
@@ -222,7 +225,7 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      // 取 API key：委托目标是智谱 glm-5v-turbo，只用智谱凭据
+      // 取 API key：委托目标是智谱视觉模型，只用智谱凭据
       const candidates = ["zai-coding-cn", "zai"];
       let apiKey: string | undefined;
       for (const p of candidates) {
