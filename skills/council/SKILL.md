@@ -1,4 +1,5 @@
 ---
+disable-model-invocation: true
 name: council
 description: |
   发起多模型 council 审议：三次不同认知独立作答、可选互相批评，
