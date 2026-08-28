@@ -19,6 +19,7 @@
   - `handoff` — 会话交接简报
   - `ui-review` — 只读 UI/UX review
   - `steelman` — 日常判断的 steelman 回路（不用于项目级 grill）
+  - `learn` — 苏格拉底式搞懂一个概念，不直接灌完整解释
 
 ## 接入
 
