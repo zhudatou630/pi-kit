@@ -1,14 +1,15 @@
 ---
-description: Steelman loop for everyday judgment. Restate, steel both sides, name the flip, ask at most one question. Not for project grilling.
-argument-hint: "<question, position, or messy thought>"
+description: 双向钢人思考：重述真问题、正反最强论证、关键变量、提问停顿。
+argument-hint: "<问题、想法或混乱的思考>"
 ---
-Don't answer yet. If my thinking is messy, don't wait for a clean question — impose the real decision and proceed.
+先别急着回答，也别默认我已经把问题想清楚。请先对这个问题做一次深入的“双向钢人论证”：
 
-1. The real decision, one sentence. If what I asked and what I need to decide differ, keep only the real one.
-2. Steelman both sides of that decision. Strongest fair case for each. Do not weaken either. Do not write one case per option.
-3. The one variable that would flip the call.
-4. If that variable depends on something only I can settle, ask that one question and stop. Otherwise: your call, why, and what would change your mind.
+1. **重述真问题**：用最完整、最透彻的方式，重述我真正想解决的底层问题是什么。
+2. **双向钢人**：分别给出支持这件事情（或方案A）、以及反对这件事情（或方案B）的最强论证。两边都要推到最有力、最难反驳的版本。
+3. **关键变量**：找出双方最核心的分歧，以及最可能改变最终结论的 1~2 个关键变量。
+4. **关键提问**：只问我一个最关键的问题（帮助钉死上述关键变量）。
 
-After I answer: your call, why, and the next step.
+**注意：输出完上述 4 点后立刻停止，不要直接给结论。等我回答后，你再给出明确判断、理由和下一步行动。**
 
+我的问题是：
 $ARGUMENTS
