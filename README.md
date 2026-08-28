@@ -6,7 +6,6 @@
 
 - **extensions/**
   - `apply_patch` — 支持相对路径和绝对路径的 Codex 风格补丁工具
-  - `child-sessions` — 列出/磁盘续接 tintinweb 子会话
   - `compaction-recovery` — 压缩或流中断后尝试恢复当前 turn
   - `vision-delegate` — 主模型不支持图片时，用视觉模型转成文字描述
   - `x-search` — 调用 xAI X Search
