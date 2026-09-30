@@ -39,14 +39,48 @@ test("swaps edit and apply_patch by model, never into a read-only loadout", () =
 	assert.deepEqual(readOnly.active(), ["grep", "read"]);
 });
 
-test("refuses ambiguous context instead of patching the first match", async () => {
-	const t = load([]);
-	writeFileSync(join(t.cwd, "a.txt"), "x\ny\nx\ny\n");
-	await assert.rejects(t.run(patch("*** Update File: a.txt", " x", "-y", "+z")), /Ambiguous context/);
-	assert.equal(readFileSync(join(t.cwd, "a.txt"), "utf8"), "x\ny\nx\ny\n");
+// The file shape from session 01a0f043: the same line twice, told apart by hunk order.
+const twin = ["function a() {", "  return (", "    <article>", "  );", "}", "function pending() {", "  return 1;", "}", "function b() {", "  return (", "    <article>", "    <sheen />", "  );", "}", ""].join("\n");
 
-	await t.run(patch("*** Update File: a.txt", "@@ y", " x", "-y", "+z"));
-	assert.equal(readFileSync(join(t.cwd, "a.txt"), "utf8"), "x\ny\nx\nz\n");
+test("repeated lines are told apart by hunk order and @@ anchors", async () => {
+	const t = load([]);
+	const file = join(t.cwd, "c.tsx");
+	writeFileSync(file, twin);
+	// Session call 2: plain order.
+	await t.run(patch("*** Update File: c.tsx", "@@", "-    <article>", "+    <A1>", "@@ function pending() {", "-  return 1;", "+  return 2;", "@@", "-    <article>", "+    <A2>"));
+	assert.equal(readFileSync(file, "utf8"), twin.replace("<article>", "<A1>").replace("return 1", "return 2").replace("<article>", "<A2>"));
+
+	// Session call 5: anchor given as a context line, then the duplicate after it.
+	writeFileSync(file, twin);
+	await t.run(patch("*** Update File: c.tsx", "@@", " function b() {", "@@", "   return (", "-    <article>", "+    <B>"));
+	assert.equal(readFileSync(file, "utf8"), twin.replace(/<article>(?![\s\S]*<article>)/, "<B>"));
+
+	// Anchor repeated as the first context line; unified-diff header ignored.
+	writeFileSync(file, twin);
+	await t.run(patch("*** Update File: c.tsx", "@@ function b() {", " function b() {", "   return (", "-    <article>", "+    <B>"));
+	assert.equal(readFileSync(file, "utf8"), twin.replace(/<article>(?![\s\S]*<article>)/, "<B>"));
+	writeFileSync(file, twin);
+	await t.run(patch("*** Update File: c.tsx", "@@ -6,3 +6,3 @@", " function pending() {", "-  return 1;", "+  return 2;"));
+	assert.equal(readFileSync(file, "utf8"), twin.replace("return 1", "return 2"));
+});
+
+test("errors say what to fix", async () => {
+	const t = load([]);
+	writeFileSync(join(t.cwd, "c.tsx"), twin);
+	// Session call 3: a hunk above the previous one.
+	await assert.rejects(
+		t.run(patch("*** Update File: c.tsx", "@@ function b() {", "-  return (", "+  return [", "@@", "-  return 1;", "+  return 2;")),
+		/line 7, above the previous hunk.*file order/,
+	);
+	await assert.rejects(t.run(patch("*** Update File: c.tsx", "@@ function missing() {", "-  return 1;", "+  x")), /c\.tsx: could not find the @@ anchor line/);
+	assert.equal(readFileSync(join(t.cwd, "c.tsx"), "utf8"), twin);
+});
+
+test("tolerates a trailing blank separator and typographic punctuation", async () => {
+	const t = load([]);
+	writeFileSync(join(t.cwd, "d.txt"), "a \u2014 \u201Cq\u201D\nb\n");
+	await t.run(patch("*** Update File: d.txt", ' a - "q"', "-b", "+c", ""));
+	assert.equal(readFileSync(join(t.cwd, "d.txt"), "utf8"), "a \u2014 \u201Cq\u201D\nc\n");
 });
 
 test("keeps BOM and CRLF, ends added files with a newline", async () => {

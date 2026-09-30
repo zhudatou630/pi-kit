@@ -123,6 +123,24 @@ function parserReadStr({
 	return "";
 }
 
+/** Model output often has ASCII where the file has typographic punctuation. */
+function normalizePunctuation(line: string): string {
+	return line
+		.trim()
+		.replace(/[\u2010-\u2015\u2212]/g, "-")
+		.replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+		.replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+		.replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ");
+}
+
+/** Line comparisons from strict to loose (Codex seek_sequence), with their fuzz cost. */
+const MATCH_LEVELS: [(line: string) => string, number][] = [
+	[(line) => line, 0],
+	[(line) => line.trimEnd(), 1],
+	[(line) => line.trim(), 100],
+	[normalizePunctuation, 1000],
+];
+
 function findContextCore({
 	lines,
 	context,
@@ -136,27 +154,14 @@ function findContextCore({
 		return { newIndex: start, fuzz: 0 };
 	}
 
-	// Strictest comparison first. A context that matches more than one place at the
-	// chosen strictness is refused rather than applied to the first hit: edit
-	// requires a unique oldText for the same reason.
-	const levels: [(line: string) => string, number][] = [
-		[(line) => line, 0],
-		[(line) => line.trimEnd(), 1],
-		[(line) => line.trim(), 100],
-	];
-	for (const [normalize, fuzz] of levels) {
+	// Codex semantics: the first match at or after `start`, strictest comparison
+	// first. Repeated identical text is told apart by hunk order, so a later
+	// duplicate is never "ambiguous": the cursor has already passed the earlier one.
+	for (const [normalize, fuzz] of MATCH_LEVELS) {
 		const wanted = context.map(normalize);
-		const hits: number[] = [];
 		for (let i = start; i + wanted.length <= lines.length; i++) {
-			if (wanted.every((line, offset) => normalize(lines[i + offset]) === line)) hits.push(i);
+			if (wanted.every((line, offset) => normalize(lines[i + offset]) === line)) return { newIndex: i, fuzz };
 		}
-		if (hits.length > 1) {
-			throw new DiffError(
-				`Ambiguous context: it matches ${hits.length} places (lines ${hits.map((hit) => hit + 1).join(", ")}). ` +
-					`Add more context lines or an @@ anchor line (e.g. the enclosing function signature):\n${context.join("\n")}`,
-			);
-		}
-		if (hits.length === 1) return { newIndex: hits[0], fuzz };
 	}
 
 	return { newIndex: -1, fuzz: 0 };
@@ -310,7 +315,34 @@ function parseAddFile({ state }: { state: ParserState }): PatchAction {
 	};
 }
 
-function parseUpdateFile({ state, text }: { state: ParserState; text: string }): PatchAction {
+/** `@@ -12,7 +12,8 @@` copied from unified diffs: a header, not a line to find. */
+const UNIFIED_HUNK_HEADER = /^-\d+(,\d+)? \+\d+(,\d+)? @@/;
+
+/** Error text that tells the model what to change, not just that it failed. */
+function notFoundError({
+	path,
+	what,
+	lines,
+	sought,
+	start,
+}: {
+	path: string;
+	what: string;
+	lines: string[];
+	sought: string[];
+	start: number;
+}): DiffError {
+	const earlier = findContextCore({ lines, context: sought, start: 0 }).newIndex;
+	const hint =
+		earlier !== -1 && earlier < start
+			? `It exists at line ${earlier + 1}, above the previous hunk. Hunks are matched top to bottom, each after the one before it: put hunks in file order.`
+			: "Re-read the file and copy these lines exactly.";
+	return new DiffError(
+		`${path}: could not find ${what} at or after line ${start + 1}. ${hint}\n${sought.join("\n")}`,
+	);
+}
+
+function parseUpdateFile({ state, text, path }: { state: ParserState; text: string; path: string }): PatchAction {
 	const action: PatchAction = {
 		type: "update",
 		chunks: [],
@@ -336,48 +368,49 @@ function parseUpdateFile({ state, text }: { state: ParserState; text: string }):
 			throw new DiffError(`Invalid Line:\n${state.lines[state.index]}`);
 		}
 
-		if (defStr.trim().length > 0) {
-			let found = false;
-
-			const exactAlreadySeen = lines.slice(0, index).some((line) => line === defStr);
-			if (!exactAlreadySeen) {
-				for (let i = index; i < lines.length; i++) {
-					if (lines[i] === defStr) {
-						index = i + 1;
-						found = true;
-						break;
-					}
-				}
+		// `@@ <line>` jumps to the first line at or after the cursor that matches it;
+		// the hunk's context is then searched below it (Codex semantics).
+		let anchorAt = -1;
+		if (defStr.trim() && !UNIFIED_HUNK_HEADER.test(defStr.trim())) {
+			const anchor = findContextCore({ lines, context: [defStr], start: index });
+			if (anchor.newIndex === -1) {
+				throw notFoundError({ path, what: "the @@ anchor line", lines, sought: [defStr], start: index });
 			}
-
-			if (!found) {
-				const trimAlreadySeen = lines.slice(0, index).some((line) => line.trim() === defStr.trim());
-				if (!trimAlreadySeen) {
-					for (let i = index; i < lines.length; i++) {
-						if (lines[i].trim() === defStr.trim()) {
-							index = i + 1;
-							state.fuzz += 1;
-							break;
-						}
-					}
-				}
-			}
+			anchorAt = anchor.newIndex;
+			index = anchorAt + 1;
+			state.fuzz += anchor.fuzz;
 		}
 
 		const { nextChunkContext, chunks, endPatchIndex, eof } = peekNextSection({ lines: state.lines, index: state.index });
-		const nextChunkText = nextChunkContext.join("\n");
-		const { newIndex, fuzz } = findContext({
-			lines,
-			context: nextChunkContext,
-			start: index,
-			eof,
-		});
+		let context = nextChunkContext;
+		let { newIndex, fuzz } = findContext({ lines, context, start: index, eof });
+
+		// The context may repeat the anchor line itself as its first line.
+		if (newIndex === -1 && anchorAt !== -1) {
+			({ newIndex, fuzz } = findContext({ lines, context, start: anchorAt, eof }));
+		}
+
+		// A blank line after the last context line is usually just a separator the
+		// model left before the next marker; retry without it if no change touches it.
+		const last = context.length - 1;
+		if (
+			newIndex === -1 &&
+			last >= 0 &&
+			context[last].trim() === "" &&
+			chunks.every((chunk) => chunk.origIndex + chunk.delLines.length <= last)
+		) {
+			context = context.slice(0, last);
+			({ newIndex, fuzz } = findContext({ lines, context, start: anchorAt === -1 ? index : anchorAt, eof }));
+		}
 
 		if (newIndex === -1) {
-			if (eof) {
-				throw new DiffError(`Invalid EOF Context ${index}:\n${nextChunkText}`);
-			}
-			throw new DiffError(`Invalid Context ${index}:\n${nextChunkText}`);
+			throw notFoundError({
+				path,
+				what: eof ? "these lines at the end of the file" : "these lines",
+				lines,
+				sought: nextChunkContext,
+				start: index,
+			});
 		}
 
 		state.fuzz += fuzz;
@@ -390,7 +423,7 @@ function parseUpdateFile({ state, text }: { state: ParserState; text: string }):
 			});
 		}
 
-		index = newIndex + nextChunkContext.length;
+		index = newIndex + context.length;
 		state.index = endPatchIndex;
 	}
 
@@ -426,7 +459,7 @@ function parsePatchDocument({ text, originalFiles }: { text: string; originalFil
 				throw new DiffError(`Update File Error: Missing File: ${updatePath}`);
 			}
 
-			const action = parseUpdateFile({ state, text: state.currentFiles[updatePath] });
+			const action = parseUpdateFile({ state, text: state.currentFiles[updatePath], path: updatePath });
 			action.movePath = moveTo;
 			state.patch.actions[updatePath] = action;
 			continue;
@@ -744,7 +777,10 @@ export default function applyPatchExtension(pi: ExtensionAPI) {
 		name: "apply_patch",
 		label: "apply_patch",
 		description:
-			"Apply a Codex-style patch. Input must be a single patch string using markers like *** Begin Patch, *** Update File:, @@, and *** End Patch. Paths may be relative to the current working directory or absolute paths elsewhere on the local machine.",
+			"Edit files with a Codex-style patch: one string from *** Begin Patch to *** End Patch, with *** Add File: / *** Update File: (optional *** Move to:) / *** Delete File: sections. " +
+			"In an update, hunks are matched top to bottom: each hunk's context lines are found at the first match after the previous hunk, so keep hunks in file order. " +
+			"`@@ <exact line>` jumps to the next line matching it (e.g. a function signature) before the hunk. " +
+			"Paths may be relative to the current working directory or absolute.",
 		parameters: APPLY_PATCH_PARAMETERS,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			if (signal?.aborted) {
