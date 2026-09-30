@@ -123,14 +123,6 @@ function parserReadStr({
 	return "";
 }
 
-function linesEqual({ left, right }: { left: string[]; right: string[] }): boolean {
-	if (left.length !== right.length) return false;
-	for (let i = 0; i < left.length; i++) {
-		if (left[i] !== right[i]) return false;
-	}
-	return true;
-}
-
 function findContextCore({
 	lines,
 	context,
@@ -144,26 +136,27 @@ function findContextCore({
 		return { newIndex: start, fuzz: 0 };
 	}
 
-	for (let i = start; i < lines.length; i++) {
-		if (linesEqual({ left: lines.slice(i, i + context.length), right: context })) {
-			return { newIndex: i, fuzz: 0 };
+	// Strictest comparison first. A context that matches more than one place at the
+	// chosen strictness is refused rather than applied to the first hit: edit
+	// requires a unique oldText for the same reason.
+	const levels: [(line: string) => string, number][] = [
+		[(line) => line, 0],
+		[(line) => line.trimEnd(), 1],
+		[(line) => line.trim(), 100],
+	];
+	for (const [normalize, fuzz] of levels) {
+		const wanted = context.map(normalize);
+		const hits: number[] = [];
+		for (let i = start; i + wanted.length <= lines.length; i++) {
+			if (wanted.every((line, offset) => normalize(lines[i + offset]) === line)) hits.push(i);
 		}
-	}
-
-	for (let i = start; i < lines.length; i++) {
-		const left = lines.slice(i, i + context.length).map((line) => line.trimEnd());
-		const right = context.map((line) => line.trimEnd());
-		if (linesEqual({ left, right })) {
-			return { newIndex: i, fuzz: 1 };
+		if (hits.length > 1) {
+			throw new DiffError(
+				`Ambiguous context: it matches ${hits.length} places (lines ${hits.map((hit) => hit + 1).join(", ")}). ` +
+					`Add more context lines or an @@ anchor line (e.g. the enclosing function signature):\n${context.join("\n")}`,
+			);
 		}
-	}
-
-	for (let i = start; i < lines.length; i++) {
-		const left = lines.slice(i, i + context.length).map((line) => line.trim());
-		const right = context.map((line) => line.trim());
-		if (linesEqual({ left, right })) {
-			return { newIndex: i, fuzz: 100 };
-		}
+		if (hits.length === 1) return { newIndex: hits[0], fuzz };
 	}
 
 	return { newIndex: -1, fuzz: 0 };
@@ -311,7 +304,8 @@ function parseAddFile({ state }: { state: ParserState }): PatchAction {
 
 	return {
 		type: "add",
-		newFile: lines.join("\n"),
+		// Every `+` line is a full line, so the file ends with a newline (as in Codex).
+		newFile: lines.map((line) => `${line}\n`).join(""),
 		chunks: [],
 	};
 }
@@ -607,18 +601,45 @@ function removeFileAtPath({ cwd, path }: { cwd: string; path: string }): void {
 	unlinkSync(absolutePath);
 }
 
-function executePatch({ cwd, patchText }: { cwd: string; patchText: string }): ExecutePatchResult {
+function executePatch({ cwd, patchText: rawPatchText }: { cwd: string; patchText: string }): ExecutePatchResult {
+	const patchText = rawPatchText.replace(/\r\n/g, "\n").trim();
 	if (!patchText.startsWith("*** Begin Patch")) {
 		throw new DiffError("Patch must start with '*** Begin Patch'");
 	}
 
+	// Patches are matched on LF text without a BOM; each updated file gets its own
+	// BOM and CRLF endings back on write, so inserted lines match the rest of it.
+	const formats: Record<string, { bom: boolean; crlf: boolean }> = {};
 	const requiredFiles = identifyFilesNeeded({ patchText });
 	const originalFiles = loadFiles({
 		paths: requiredFiles,
-		openFile: ({ path }) => openFileAtPath({ cwd, path }),
+		openFile: ({ path }) => {
+			const raw = openFileAtPath({ cwd, path });
+			const bom = raw.startsWith("\uFEFF");
+			const body = bom ? raw.slice(1) : raw;
+			const crlf = body.includes("\r\n");
+			formats[path] = { bom, crlf };
+			return crlf ? body.replace(/\r\n/g, "\n") : body;
+		},
 	});
+	const restoreFormat = (path: string, text: string): string => {
+		const format = formats[path];
+		if (!format) return text;
+		return (format.bom ? "\uFEFF" : "") + (format.crlf ? text.replace(/\n/g, "\r\n") : text);
+	};
 	const { patch, fuzz } = parsePatchDocument({ text: patchText, originalFiles });
 	const commit = patchToCommit({ patch, originalFiles });
+
+	// Check every move before writing anything, so a refused move cannot leave
+	// the patch half applied.
+	for (const [path, change] of Object.entries(commit.changes)) {
+		if (!change.movePath) continue;
+		const from = resolvePatchPath({ cwd, patchPath: path });
+		const to = resolvePatchPath({ cwd, patchPath: change.movePath });
+		if (from !== to && existsSync(to)) {
+			throw new DiffError(`Update File Error: Destination already exists: ${change.movePath}`);
+		}
+	}
 
 	const changedFiles = new Set<string>();
 	const createdFiles = new Set<string>();
@@ -654,12 +675,9 @@ function executePatch({ cwd, patchText }: { cwd: string; patchText: string }): E
 			const fromAbsolutePath = resolvePatchPath({ cwd, patchPath: path });
 			const toAbsolutePath = resolvePatchPath({ cwd, patchPath: change.movePath });
 			const destinationExisted = existsSync(toAbsolutePath);
-			if (destinationExisted && fromAbsolutePath !== toAbsolutePath) {
-				throw new DiffError(`Update File Error: Destination already exists: ${change.movePath}`);
-			}
 
 			mkdirSync(dirname(toAbsolutePath), { recursive: true });
-			writeFileSync(toAbsolutePath, change.newContent, "utf8");
+			writeFileSync(toAbsolutePath, restoreFormat(path, change.newContent), "utf8");
 			if (fromAbsolutePath !== toAbsolutePath) {
 				if (!existsSync(fromAbsolutePath)) {
 					throw new DiffError(`Update File Error: Missing source file: ${path}`);
@@ -679,7 +697,7 @@ function executePatch({ cwd, patchText }: { cwd: string; patchText: string }): E
 			continue;
 		}
 
-		writeFileAtPath({ cwd, path, content: change.newContent });
+		writeFileAtPath({ cwd, path, content: restoreFormat(path, change.newContent) });
 		changedFiles.add(path);
 	}
 
@@ -692,7 +710,36 @@ function executePatch({ cwd, patchText }: { cwd: string; patchText: string }): E
 	};
 }
 
+/** GPT / Codex models are trained on this patch format; others use pi's edit. */
+function prefersApplyPatch(model: { id: string } | undefined): boolean {
+	return model !== undefined && /gpt|codex/i.test(model.id);
+}
+
 export default function applyPatchExtension(pi: ExtensionAPI) {
+	// True while this extension has swapped `edit` out for `apply_patch`.
+	let editHidden = false;
+
+	// Before every run: GPT gets apply_patch instead of edit, other models get edit
+	// back. Only a loadout that can write (`write` active) gets apply_patch, so a
+	// read-only preset never gains a write tool through this extension.
+	pi.on("before_agent_start", (_event, ctx) => {
+		const names = new Set(pi.getActiveTools());
+		const writable = names.has("write");
+		names.delete("apply_patch");
+		if (prefersApplyPatch(ctx.model) && writable) {
+			if (names.delete("edit")) editHidden = true;
+			names.add("apply_patch");
+		} else if (editHidden) {
+			if (writable) names.add("edit");
+			editHidden = false;
+		}
+		const next = [...names];
+		const current = pi.getActiveTools();
+		if (next.length !== current.length || next.some((name) => !current.includes(name))) {
+			pi.setActiveTools(next);
+		}
+	});
+
 	pi.registerTool({
 		name: "apply_patch",
 		label: "apply_patch",
