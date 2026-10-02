@@ -9,6 +9,7 @@
   - `compaction-recovery` — 压缩或流中断后尝试恢复当前 turn
   - `vision-delegate` — 主模型不支持图片时，用视觉模型转成文字描述
   - `x-search` — 调用 xAI X Search
+  - `web` — `web_search`（Brave 关键词 / Exa 语义，互为回退）与 `web_fetch`（网页转 markdown，分页）；无需 bash。需环境变量 `BRAVE_API_KEY`、`EXA_API_KEY`，依赖需 `npm install`
 - **skills/**
   - `grill` — 动手前拷问方案，逼出隐性假设与未决决策
   - `skill-creator` — 创建/修剪 pi skill 的元 skill
