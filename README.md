@@ -15,12 +15,11 @@
   - `skill-creator` — 创建/修剪 pi skill 的元 skill
   - `council` — 用 tintinweb `Agent` 发起多模型、多认知审议
   - `watchman` — 用固定脚本 pi-watch + OS 定时器为长任务搭建无人值守监工
-  - `desk-chrome` — attach 本机常驻假桌面里的专用 Chrome
+  - `browser` — 真实浏览器：`sb` 隔离 headless 用于测前端/JS 页面，`ab` 用户登录态的常驻 Chrome（看屏可接管）
 - **prompts/**
   - `handoff` — 会话交接简报
-  - `ui-review` — 只读 UI/UX review
   - `steelman` — 日常判断的 steelman 回路（不用于项目级 grill）
-  - `learn` — 苏格拉底式搞懂一个概念，不直接灌完整解释
+  - `learn` — 用提问把一个概念搞懂
 
 ## 接入
 

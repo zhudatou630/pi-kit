@@ -73,7 +73,7 @@ async function readPage(rawUrl: string, signal: AbortSignal): Promise<string> {
 	const title = doc.querySelector("title")?.textContent?.trim();
 	const main = doc.querySelector("main, article, [role='main'], .content, #content") ?? doc.body;
 	const html = main?.innerHTML ?? "";
-	if (html.trim().length <= 100) throw new Error("Could not extract readable content from this page.");
+	if (html.trim().length <= 100) throw new Error("Could not extract readable content from this page. It may need JavaScript or a login; use the browser skill.");
 	return `${title ? `# ${title}\n\n` : ""}${htmlToMarkdown(TurndownService, gfm, html)}`;
 }
 
