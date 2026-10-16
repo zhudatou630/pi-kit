@@ -12,28 +12,33 @@ Two entry points, same agent-browser commands:
 
 Never run bare `agent-browser` or launch Chrome. Playwright scripts for repeated flows, precise measurement, or complex control flow; never against port 9222.
 
-## Commands (`X` = `sb` or `ab`)
+## How to drive it
+
+1. **Read-only:** `read` or one `eval` that returns JSON. Stop there.
+2. **Act:** look once first. Prefer one `eval` that returns the elements you will use (`[{sel, text, visible}, ...]`). If the structure is unclear, `snapshot -i -c`. If you cannot pin an element, `ab pick "prompt"` (shared Chrome only).
+3. **Same page, known steps:** one `batch --bail`. Selectors come from step 2 (`eval` / snapshot / pick), not invented. Use CSS or `find role|text|label`, **not `@ref`** (the first DOM change invalidates refs). End the batch with a check (`get url`, `wait --text`, or an `eval` assertion). Stay on one page; about 10 steps max so the user can say 停.
+4. **Navigation or a large DOM change:** go back to step 2. Do not keep clicking across a page load.
+5. **Fallback:** if a batch step fails, snapshot + `@ref` **only for that step**. Covered target: `scrollintoview` or dismiss the overlay first. `eval` `.click()` / assigning `.value` only on sites you already know ignore real input events.
+
+One-off `click`/`fill` is fine. Do not snapshot between every click. The same flow a third time → a Playwright script (against `sb`, never 9222).
 
 ```
 X open <url> | X tab new <url> | X tab | X tab t3 | X tab close t3
-X read                                  # rendered text of current tab
-X eval --stdin <<'EOF' ... EOF          # last expression is returned as JSON
-X snapshot -i -c                        # interactive elements with @refs
+X read
+X eval --stdin <<'EOF' ... EOF          # last expression returned as JSON; use to inspect
+X snapshot -i -c                        # only when eval cannot find the controls
 X click @e5 | fill @e5 "text" | press Enter | select @e5 "v" | scrollintoview @e5
 X get text @e5 | get attr @e5 href | get url
 X wait --load networkidle | wait --text "Done" | wait @e5
 X download @e5 <path> | screenshot [--annotate] <path>
-X batch "click @e3" "wait --load networkidle" "get url"
-X skills get core --full                # full reference
+X batch --bail --json <<'EOF'
+[["fill","input[name=q]","..."],["click","button[type=submit]"],["wait","--load","networkidle"],["get","url"]]
+EOF
+X skills get core --full
 sb set viewport 390 844 | set device "iPhone 16" | console | errors | close
 ```
 
-## Rules
-
-- Read with `read` or one `eval`; snapshot only to interact; screenshot only for layout/visuals.
-- Re-snapshot after any page change; use only fresh refs. Target elements by ref, not guessed text/CSS.
-- "covered by": `scrollintoview` or dismiss the overlay first.
-- Batch tasks: build the candidate list and stop condition first, then process, then reconcile counts and links.
+`--json` on `batch` is output shape; the commands themselves are the stdin JSON array. Selectors with spaces belong in that array (argument mode splits on spaces). Without `--bail`, later steps still run after a failure.
 
 ## ab (shared Chrome)
 

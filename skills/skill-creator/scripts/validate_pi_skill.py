@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Static validation for lightweight pi Agent Skills.
+"""Static format validation for lightweight pi Agent Skills.
 
-This script reads files only. It never executes bundled skill scripts.
+Checks frontmatter, name, description length, and resource references only.
+It does not judge content. It reads files only and never executes bundled scripts.
 """
 
 from __future__ import annotations
@@ -22,24 +23,6 @@ CODEX_OR_CLAUDE_ONLY = [
     "claude -p",
     "${CLAUDE_SKILL_DIR}",
     "CLAUDE_PROJECT_DIR",
-]
-WORKFLOW_BRIEF_TERMS = [
-    "Recurring job",
-    "Real inputs",
-    "Desired output",
-    "Critical judgment",
-    "Success standard",
-    "Failure/drift signal",
-    "Near-neighbor exclusions",
-]
-SKILL_CONTRACT_TERMS = [
-    "Should trigger",
-    "Should not trigger",
-    "Inputs",
-    "Outputs",
-    "Validation",
-    "Risk level",
-    "Scope",
 ]
 
 
@@ -115,7 +98,7 @@ def validate(skill_dir: Path) -> dict:
     else:
         if len(description) > 1024:
             failures.append("Description exceeds 1024 characters.")
-        if len(description) < 40:
+        if len(description) < 15:
             warnings.append("Description is very short; routing may be vague.")
         if "todo" in description.lower():
             failures.append("Description still contains TODO text.")
@@ -148,14 +131,6 @@ def validate(skill_dir: Path) -> dict:
         warnings.append("agents/ metadata is usually unnecessary for pi skills; keep only if there is a clear cross-client need.")
     if (skill_dir / "manifest.json").exists():
         warnings.append("manifest.json is usually unnecessary for personal pi skills; keep only for shared/release packages.")
-
-    missing_brief_terms = [term for term in WORKFLOW_BRIEF_TERMS if term.lower() not in lower_text]
-    if missing_brief_terms:
-        warnings.append("Workflow Brief appears incomplete; missing: " + ", ".join(missing_brief_terms))
-
-    missing_terms = [term for term in SKILL_CONTRACT_TERMS if term.lower() not in lower_text]
-    if missing_terms:
-        warnings.append("Skill Contract appears incomplete; missing: " + ", ".join(missing_terms))
 
     return {
         "ok": not failures,
