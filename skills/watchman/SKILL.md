@@ -8,18 +8,6 @@ description: 为当前项目的长任务（远端训练、回测、抓取、编�
 
 用通用脚本 pi-watch + OS 定时器，让 Agent 能离开浏览器监督长任务。pi-watch 做检查和唤醒；Agent 做诊断和决策。
 
-## Should trigger
-
-- 建立长任务监工：远端训练/回测/抓取，或本地编译、本地回测等也要离开浏览器监督的任务。
-- 修改或停用已有 `.pi/watch/` 监工。
-
-## Should not trigger
-
-- 只看一次日志或状态。
-- 等一个短命令结束。
-- 优化任务代码本身。
-- 搭 Prometheus/Grafana 等通用监控平台。
-
 ## pi-watch
 
 `scripts/pi-watch` 在本 skill 目录下（仓库里是 `skills/watchman/scripts/pi-watch`）。相对路径从本 skill 目录解析，不要假设 `pi-watch` 已在 PATH。安装 timer 时脚本会把自身绝对路径写进 systemd unit，之后所有项目复用同一份脚本。它只做三件事：
@@ -144,7 +132,3 @@ Agent 按以下原则行动：
 ## 修改已有监工
 
 先读现有 `.pi/watch/` 配置和 state。做最小修改，不重新生成。报告改了什么、何时生效、如何回退。
-
-## 完成报告
-
-搭建或修改后，简洁报告：检查命令、间隔、session、timer unit、启停命令、验证结果、未验证假设。
