@@ -3,20 +3,32 @@
   "version": "0.1.0",
   "description": "个人自定义 pi skills / prompts / subagents，统一管理。",
   "type": "module",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "license": "MIT",
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"],
-    "prompts": ["./prompts"],
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ],
     "subagents": {
-      "agents": ["./agents"]
+      "agents": [
+        "./agents"
+      ]
     }
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
     "jsdom": "^27.0.1",
+    "pdfjs-dist": "^6.4.299",
     "turndown": "^7.2.2",
-    "turndown-plugin-gfm": "^1.0.2"
+    "turndown-plugin-gfm": "^1.0.2",
+    "unpdf": "^1.9.1"
   }
 }
