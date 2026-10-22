@@ -2,24 +2,24 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
-const MODEL_ID = "grok-4.6";
+const DEFAULT_MODEL = "grok-4.6";
 const XAI_RESPONSES_URL = "https://api.x.ai/v1/responses";
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "x-search.json");
 const TIMEOUT_MS = 180_000;
 
-const BACKENDS = ["auto", "xai", "sub2api"] as const;
+const BACKENDS = ["sub2api", "xai"] as const;
 type Backend = (typeof BACKENDS)[number];
-type ConcreteBackend = Exclude<Backend, "auto">;
+const DEFAULT_BACKEND: Backend = "sub2api";
 
-interface StoredConfig {
-	backend?: Backend;
+interface Config {
+	backend: Backend;
+	model: string;
 }
 
 interface ProviderAuth {
-	backend: ConcreteBackend;
+	backend: Backend;
 	endpoint: string;
 	apiKey: string;
 	headers: Record<string, string>;
@@ -28,25 +28,56 @@ interface ProviderAuth {
 interface Citation {
 	url: string;
 	title?: string;
+	posted_at?: string;
+	outside_date_range?: true;
+}
+
+const X_EPOCH_MS = 1288834974657n;
+const SNOWFLAKE_START_MS = Date.UTC(2010, 10, 4);
+
+// X post IDs are snowflakes: (id >> 22) + X epoch = creation time in ms. Independent of Grok's wording.
+function postedAt(url: string): string | undefined {
+	const match = /\/status(?:es)?\/(\d{15,20})(?:\D|$)/.exec(url);
+	if (!match) return undefined;
+	const ms = Number((BigInt(match[1]) >> 22n) + X_EPOCH_MS);
+	if (ms < SNOWFLAKE_START_MS || ms > Date.now() + 86_400_000) return undefined;
+	return new Date(ms).toISOString();
+}
+
+// Mirrors xAI semantics: from_date 00:00 UTC inclusive, to_date exclusive.
+function markDates(citations: Citation[], fromDate?: string, toDate?: string): Citation[] {
+	const from = fromDate ? Date.parse(`${fromDate}T00:00:00Z`) : undefined;
+	const to = toDate ? Date.parse(`${toDate}T00:00:00Z`) : undefined;
+	return citations.map((citation) => {
+		const posted = postedAt(citation.url);
+		if (!posted) return citation;
+		const ms = Date.parse(posted);
+		const outside = (from !== undefined && ms < from) || (to !== undefined && ms >= to);
+		return { ...citation, posted_at: posted, ...(outside ? { outside_date_range: true as const } : {}) };
+	});
 }
 
 function isBackend(value: unknown): value is Backend {
 	return typeof value === "string" && BACKENDS.includes(value as Backend);
 }
 
-function loadBackend(): Backend {
-	if (!existsSync(CONFIG_PATH)) return "auto";
+// Unknown or legacy values (e.g. the removed "auto") fall back to defaults.
+function loadConfig(): Config {
+	const config: Config = { backend: DEFAULT_BACKEND, model: DEFAULT_MODEL };
+	if (!existsSync(CONFIG_PATH)) return config;
 	try {
-		const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as StoredConfig;
-		return isBackend(config.backend) ? config.backend : "auto";
+		const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Record<string, unknown>;
+		if (isBackend(raw.backend)) config.backend = raw.backend;
+		if (typeof raw.model === "string" && raw.model.trim()) config.model = raw.model.trim();
 	} catch {
-		return "auto";
+		// Keep defaults when the file is unreadable.
 	}
+	return config;
 }
 
-function saveBackend(backend: Backend): void {
+function saveConfig(config: Config): void {
 	mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-	writeFileSync(CONFIG_PATH, `${JSON.stringify({ backend }, null, 2)}\n`, "utf8");
+	writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
 function requestSignal(signal?: AbortSignal): AbortSignal {
@@ -62,21 +93,38 @@ function requestHeaders(headers: Record<string, string | null> | undefined): Rec
 	return result;
 }
 
-async function resolveProviderAuth(
-	ctx: ExtensionContext,
-	backend: ConcreteBackend,
-): Promise<ProviderAuth | undefined> {
-	const model = ctx.modelRegistry.find(backend, MODEL_ID);
-	if (!model) return undefined;
+function grokModelIds(ctx: ExtensionContext, backend: Backend): string[] {
+	return ctx.modelRegistry
+		.getAll()
+		.filter((model) => model.provider === backend && /grok/i.test(model.id))
+		.map((model) => model.id)
+		.sort();
+}
+
+// No fallback between backends: the user picks one with /x-search-backend.
+async function resolveProviderAuth(ctx: ExtensionContext, config: Config): Promise<ProviderAuth> {
+	const { backend, model: modelId } = config;
+	const switchHint = "Use /x-search-backend or /x-search-model to change it.";
+	const model = ctx.modelRegistry.find(backend, modelId);
+	if (!model) {
+		const available = grokModelIds(ctx, backend);
+		throw new Error(
+			`Model ${backend}/${modelId} is not configured in Pi. Available grok models on ${backend}: ${available.join(", ") || "none"}. ${switchHint}`,
+		);
+	}
 
 	const resolved = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-	if (!resolved.ok || !resolved.apiKey) return undefined;
+	if (!resolved.ok || !resolved.apiKey) {
+		throw new Error(`No usable ${backend} API key is configured in Pi. ${switchHint}`);
+	}
 
 	const modelBaseUrl = (model as { baseUrl?: string }).baseUrl;
+	if (backend === "sub2api" && !modelBaseUrl) {
+		throw new Error("The sub2api provider has no baseUrl in Pi's models.json.");
+	}
 	const endpoint = backend === "xai"
 		? XAI_RESPONSES_URL
-		: `${String(modelBaseUrl ?? "").replace(/\/$/, "")}/responses`;
-	if (backend === "sub2api" && !modelBaseUrl) return undefined;
+		: `${String(modelBaseUrl).replace(/\/$/, "")}/responses`;
 
 	return {
 		backend,
@@ -84,23 +132,6 @@ async function resolveProviderAuth(
 		apiKey: resolved.apiKey,
 		headers: requestHeaders(resolved.headers),
 	};
-}
-
-async function selectProviderAuth(
-	ctx: ExtensionContext,
-	requested: Backend,
-): Promise<ProviderAuth> {
-	if (requested !== "auto") {
-		const auth = await resolveProviderAuth(ctx, requested);
-		if (auth) return auth;
-		throw new Error(`No usable ${requested}/${MODEL_ID} credentials are configured in Pi.`);
-	}
-
-	for (const backend of ["xai", "sub2api"] as const) {
-		const auth = await resolveProviderAuth(ctx, backend);
-		if (auth) return auth;
-	}
-	throw new Error(`No usable xai/${MODEL_ID} or sub2api/${MODEL_ID} credentials are configured in Pi.`);
 }
 
 function normalizeHandle(value: string): string {
@@ -115,31 +146,64 @@ function cleanAnswer(text: string): string {
 		.trim();
 }
 
+// One server-side X search Grok ran, e.g. x_keyword_search {"query":"from:elonmusk","mode":"Latest"}.
+interface SearchCall {
+	function: string;
+	args: unknown;
+}
+
+interface Coverage {
+	x_posts_fetched: number | null;
+	x_users_fetched: number | null;
+}
+
+function parseSearchArgs(input: unknown): unknown {
+	if (typeof input !== "string") return input ?? null;
+	try {
+		return JSON.parse(input);
+	} catch {
+		return input;
+	}
+}
+
+function parseCoverage(data: Record<string, unknown>): Coverage {
+	const usage = data.usage && typeof data.usage === "object" ? data.usage as Record<string, unknown> : {};
+	const details = usage.server_side_tool_usage_details && typeof usage.server_side_tool_usage_details === "object"
+		? usage.server_side_tool_usage_details as Record<string, unknown>
+		: {};
+	const count = (value: unknown) => (typeof value === "number" ? value : null);
+	return {
+		x_posts_fetched: count(details.x_posts_fetched),
+		x_users_fetched: count(details.x_users_fetched),
+	};
+}
+
 function parseResponse(data: Record<string, unknown>): {
 	answer: string;
 	citations: Citation[];
-	searchSteps: number;
+	searches: SearchCall[];
 } {
 	const output = Array.isArray(data.output) ? data.output : [];
 	const answerParts: string[] = [];
 	const citations: Citation[] = [];
+	const searches: SearchCall[] = [];
 	const seen = new Set<string>();
-	let searchSteps = 0;
 
 	const addCitation = (url: unknown, title?: unknown) => {
 		if (typeof url !== "string" || !url.startsWith("http") || seen.has(url)) return;
 		seen.add(url);
-		citations.push({
-			url,
-			...(typeof title === "string" && title.trim() ? { title: title.trim() } : {}),
-		});
+		const cleanTitle = typeof title === "string" ? title.trim() : "";
+		// xAI often sets title to the URL itself; drop it as noise.
+		citations.push({ url, ...(cleanTitle && cleanTitle !== url ? { title: cleanTitle } : {}) });
 	};
 
 	for (const rawItem of output) {
 		if (!rawItem || typeof rawItem !== "object") continue;
 		const item = rawItem as Record<string, unknown>;
-		if (item.type === "x_search_call" || item.type === "custom_tool_call") {
-			searchSteps += 1;
+		if (item.type === "custom_tool_call") {
+			searches.push({ function: String(item.name ?? "unknown"), args: parseSearchArgs(item.input) });
+		} else if (item.type === "x_search_call") {
+			searches.push({ function: "x_search", args: parseSearchArgs((item.action as Record<string, unknown> | undefined)?.query) });
 		}
 
 		if (item.type === "x_search_call" && item.action && typeof item.action === "object") {
@@ -180,19 +244,30 @@ function parseResponse(data: Record<string, unknown>): {
 	return {
 		answer: cleanAnswer(answerParts.join("\n")),
 		citations,
-		searchSteps,
+		searches,
 	};
 }
 
 export default function xSearchExtension(pi: ExtensionAPI) {
-	let defaultBackend = loadBackend();
+	const describe = (config: Config) => `X Search: ${config.backend}/${config.model}`;
+
+	const update = (ctx: ExtensionContext, change: Partial<Config>) => {
+		// Re-read so changes made in other sessions are not overwritten.
+		const next = { ...loadConfig(), ...change };
+		try {
+			saveConfig(next);
+			ctx.ui.notify(`${describe(next)} (saved)`, "info");
+		} catch (error) {
+			ctx.ui.notify(`Failed to save X Search config: ${error instanceof Error ? error.message : String(error)}`, "error");
+		}
+	};
 
 	pi.registerCommand("x-search-backend", {
-		description: "Switch the default X Search backend: auto, xai, or sub2api",
+		description: "Switch the X Search backend: sub2api or xai",
 		handler: async (args, ctx) => {
 			const raw = args.trim().toLowerCase();
 			if (raw === "status") {
-				ctx.ui.notify(`X Search backend: ${defaultBackend}`, "info");
+				ctx.ui.notify(describe(loadConfig()), "info");
 				return;
 			}
 
@@ -201,17 +276,37 @@ export default function xSearchExtension(pi: ExtensionAPI) {
 				selected = await ctx.ui.select("X Search backend", [...BACKENDS]);
 			}
 			if (!isBackend(selected)) {
-				ctx.ui.notify("Usage: /x-search-backend [auto|xai|sub2api|status]", "warning");
+				ctx.ui.notify("Usage: /x-search-backend [sub2api|xai|status]", "warning");
+				return;
+			}
+			update(ctx, { backend: selected });
+		},
+	});
+
+	pi.registerCommand("x-search-model", {
+		description: "Switch the grok model used by X Search",
+		handler: async (args, ctx) => {
+			const raw = args.trim();
+			const config = loadConfig();
+			if (raw === "status") {
+				ctx.ui.notify(describe(config), "info");
 				return;
 			}
 
-			try {
-				saveBackend(selected);
-				defaultBackend = selected;
-				ctx.ui.notify(`X Search backend set to ${selected}`, "info");
-			} catch (error) {
-				ctx.ui.notify(`Failed to save X Search backend: ${error instanceof Error ? error.message : String(error)}`, "error");
+			const available = grokModelIds(ctx, config.backend);
+			let selected: string | undefined = raw || undefined;
+			if (!selected && ctx.hasUI && available.length > 0) {
+				selected = await ctx.ui.select(`X Search model (${config.backend})`, available);
 			}
+			if (!selected) {
+				ctx.ui.notify(`Usage: /x-search-model [${available.join("|") || "model-id"}|status]`, "warning");
+				return;
+			}
+			if (!ctx.modelRegistry.find(config.backend, selected)) {
+				ctx.ui.notify(`${config.backend}/${selected} is not configured in Pi. Available: ${available.join(", ") || "none"}`, "warning");
+				return;
+			}
+			update(ctx, { model: selected });
 		},
 	});
 
@@ -219,14 +314,13 @@ export default function xSearchExtension(pi: ExtensionAPI) {
 		name: "x_search",
 		label: "X Search",
 		description:
-			"Search X (Twitter) through xAI's native X Search. Supports account and date filters plus image/video understanding. The backend can be xai, sub2api, or the configured default. Returns a synthesized answer with exact X citations; degraded=true means no cited X evidence was returned.",
+			"Search X (Twitter) through xAI's native X Search. Supports account and date filters plus image/video understanding. Returns Grok's synthesized answer (raw post text is not available) with exact X citations, each cited post's posted_at decoded from its post ID (outside_date_range=true if it falls outside from_date/to_date), the searches Grok actually ran, and how many posts/users it fetched (coverage); degraded=true means no cited X evidence was returned.",
 		promptSnippet: "Search current X posts, accounts, discussions, and threads with exact citations",
 		promptGuidelines: [
 			"Use x_search for current information from X, including posts by a specific account, X discussions, and X threads; use web_search for the general web.",
 		],
 		parameters: Type.Object({
 			query: Type.String({ minLength: 1, description: "What to find or answer from X." }),
-			backend: Type.Optional(StringEnum(BACKENDS, { description: "Per-call backend override. Omit to use the configured default." })),
 			allowed_x_handles: Type.Optional(Type.Array(Type.String(), {
 				maxItems: 20,
 				description: "Only consider these X handles. Leading @ is optional.",
@@ -235,8 +329,8 @@ export default function xSearchExtension(pi: ExtensionAPI) {
 				maxItems: 20,
 				description: "Exclude these X handles. Cannot be combined with allowed_x_handles.",
 			})),
-			from_date: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Inclusive start date in YYYY-MM-DD format." })),
-			to_date: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Inclusive end date in YYYY-MM-DD format." })),
+			from_date: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Start date (YYYY-MM-DD, from 00:00 UTC, inclusive)." })),
+			to_date: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "End date (YYYY-MM-DD, exclusive: to include a day, use the day after it)." })),
 			enable_image_understanding: Type.Optional(Type.Boolean({ description: "Analyze images attached to matching posts." })),
 			enable_video_understanding: Type.Optional(Type.Boolean({ description: "Analyze videos attached to matching posts." })),
 		}),
@@ -247,14 +341,14 @@ export default function xSearchExtension(pi: ExtensionAPI) {
 			if (allowed.length > 0 && excluded.length > 0) {
 				throw new Error("allowed_x_handles and excluded_x_handles are mutually exclusive.");
 			}
-			if (params.from_date && params.to_date && params.from_date > params.to_date) {
-				throw new Error("from_date must not be later than to_date.");
+			if (params.from_date && params.to_date && params.from_date >= params.to_date) {
+				throw new Error("from_date must be earlier than to_date (to_date is exclusive).");
 			}
 
-			const requestedBackend = params.backend ?? defaultBackend;
-			const auth = await selectProviderAuth(ctx, requestedBackend);
+			const config = loadConfig();
+			const auth = await resolveProviderAuth(ctx, config);
 			onUpdate?.({
-				content: [{ type: "text", text: `Searching X via ${auth.backend}...` }],
+				content: [{ type: "text", text: `Searching X via ${auth.backend}/${config.model}...` }],
 				details: { backend: auth.backend },
 			});
 
@@ -278,7 +372,7 @@ export default function xSearchExtension(pi: ExtensionAPI) {
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
-					model: MODEL_ID,
+					model: config.model,
 					input: query,
 					tools: [tool],
 					tool_choice: "required",
@@ -307,17 +401,19 @@ export default function xSearchExtension(pi: ExtensionAPI) {
 			const degraded = parsed.citations.length === 0;
 			const result = {
 				backend: auth.backend,
-				model: MODEL_ID,
+				model: config.model,
 				query,
 				answer: parsed.answer,
-				citations: parsed.citations,
+				citations: markDates(parsed.citations, params.from_date, params.to_date),
+				searches: parsed.searches,
+				coverage: parseCoverage(data),
 				degraded,
 				degraded_reason: degraded ? "xAI returned no cited X sources" : null,
 			};
 
 			return {
 				content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-				details: { ...result, searchSteps: parsed.searchSteps },
+				details: result,
 			};
 		},
 	});
